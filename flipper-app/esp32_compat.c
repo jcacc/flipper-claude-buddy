@@ -12,6 +12,7 @@
 #include <furi_hal_usb.h>
 #include <furi_hal_version.h>
 #include <notification/notification_messages.h>
+#include <storage/storage.h>
 
 /* ── notification sequences (copied from the port's notification_messages*.c) ── */
 
@@ -110,4 +111,43 @@ const char* furi_hal_version_get_name_ptr(void) {
 /* Not exported to FAPs; bonds can be cleared from the firmware's BT settings. */
 void bt_forget_bonded_devices(Bt* bt) {
     UNUSED(bt);
+}
+
+/* ── not exported by the flashed port firmware (2.0.0) ── */
+
+/* Only nus_charpack.c uses this, and that runs in Desktop (NUS) mode, which
+ * the port cannot enter, so the file is never opened. */
+bool storage_file_is_open(File* file) {
+    UNUSED(file);
+    return false;
+}
+
+long strtol(const char* nptr, char** endptr, int base) {
+    const char* s = nptr;
+    while(*s == ' ' || (*s >= '\t' && *s <= '\r')) s++;
+    bool neg = false;
+    if(*s == '+' || *s == '-') neg = (*s++ == '-');
+    if((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+        base = 16;
+    } else if(base == 0) {
+        base = (s[0] == '0') ? 8 : 10;
+    }
+    unsigned long acc = 0;
+    const char* digits_start = s;
+    for(;; s++) {
+        int d;
+        if(*s >= '0' && *s <= '9')
+            d = *s - '0';
+        else if(*s >= 'a' && *s <= 'z')
+            d = *s - 'a' + 10;
+        else if(*s >= 'A' && *s <= 'Z')
+            d = *s - 'A' + 10;
+        else
+            break;
+        if(d >= base) break;
+        acc = acc * base + d;
+    }
+    if(endptr) *endptr = (char*)(s == digits_start ? nptr : s);
+    return neg ? -(long)acc : (long)acc;
 }

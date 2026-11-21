@@ -12,7 +12,7 @@ App(
     sources=[
         "claude_buddy.c",
         "protocol.c",
-        "serial.c",        # USB transport (transport_usb_alloc)
+        "serial_esp32.c",  # USB transport stub: CDC not exported on ESP32 port
         "transport_bt.c",  # BT transport  (transport_bt_alloc)
         # nus_profile.c / transport_nus.c: need the STM32WB BLE stack, absent on the ESP32 port
         "transport_nus_esp32.c", # NUS fallback to BT serial (ESP32 port)

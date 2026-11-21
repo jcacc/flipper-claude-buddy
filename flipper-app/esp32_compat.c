@@ -104,8 +104,12 @@ void furi_hal_usb_disable(void) {
 void furi_hal_usb_enable(void) {
 }
 
+/* NULL makes the hello carry an empty "bt" name. The host bridge caches that
+ * name and scans for it next session; a made-up one would never match the
+ * advertised "Flipper <name>", while an empty one keeps the default
+ * 0x3082-UUID / "Flipper"-prefix discovery. */
 const char* furi_hal_version_get_name_ptr(void) {
-    return "T-Embed";
+    return NULL;
 }
 
 /* Not exported to FAPs; bonds can be cleared from the firmware's BT settings. */

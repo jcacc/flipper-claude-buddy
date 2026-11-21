@@ -14,8 +14,9 @@ App(
         "protocol.c",
         "serial.c",        # USB transport (transport_usb_alloc)
         "transport_bt.c",  # BT transport  (transport_bt_alloc)
-        "nus_profile.c",   # Nordic UART Service profile (Claude Desktop/Cowork)
-        "transport_nus.c", # NUS transport (transport_nus_alloc)
+        # nus_profile.c / transport_nus.c: need the STM32WB BLE stack, absent on the ESP32 port
+        "transport_nus_esp32.c", # NUS fallback to BT serial (ESP32 port)
+        "esp32_compat.c",        # firmware symbols the ESP32 port does not export
         "nus_protocol.c",  # Anthropic Hardware Buddy wire protocol
         "nus_stats.c",     # Persisted Desktop-mode counters
         "nus_state.c",     # Desktop-mode state machine (LED/audio)

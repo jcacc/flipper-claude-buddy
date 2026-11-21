@@ -16,7 +16,7 @@
 #include <furi.h>
 #include <furi_hal_bt.h>
 #include <bt/bt_service/bt.h>
-#include <profiles/serial_profile.h>
+#include <ble_profile/extra_profiles/serial_profile.h> /* ESP32 port path */
 
 #define TAG "BtTransport"
 #define BT_SERIAL_BUFFER_SIZE 512

@@ -446,6 +446,74 @@ static int wrap_text(
     return nlines;
 }
 
+/* ── T-Embed action menu ──────────────────────────────────────────
+ * The T-Embed's rotary encoder only produces short Up/Down (turn), short
+ * Ok (click), Ok Long (hold wheel), short Left/Right (hold + turn, timing
+ * sensitive) and Back short/long (side key). Every status-screen action
+ * the Flipper put on a long press of Up/Down/Left/Right lives here, opened
+ * with a long wheel press. Ok Long used to type "yes" directly; it moved
+ * into the menu so a slow hold-and-turn cannot approve anything. */
+typedef enum {
+    ActionCommands,
+    ActionYes,
+    ActionEsc,
+    ActionInterrupt,
+    ActionMute,
+    ActionDictate,
+    ActionInfo,
+    ActionExit,
+    ActionCount,
+} StatusAction;
+
+#define ACTIONS_VISIBLE 4
+
+static const char* action_label(const StatusModel* m, uint8_t action) {
+    switch(action) {
+    case ActionCommands:  return "Commands";
+    case ActionYes:       return "Approve (yes)";
+    case ActionEsc:       return "Esc";
+    case ActionInterrupt: return "Interrupt (Ctrl+C)";
+    case ActionMute:      return m->muted ? "Unmute" : "Mute";
+    case ActionDictate:   return "Dictate (click stops)";
+    case ActionInfo:      return "Info / settings";
+    case ActionExit:      return "Exit app";
+    default:              return "";
+    }
+}
+
+static void actions_draw(Canvas* canvas, const StatusModel* m) {
+    const int x = 8, y = 3, w = 112, h = 58, row_h = 10;
+    canvas_set_color(canvas, ColorWhite);
+    canvas_draw_box(canvas, x, y, w, h);
+    canvas_set_color(canvas, ColorBlack);
+    canvas_draw_rframe(canvas, x, y, w, h, 3);
+
+    canvas_set_font(canvas, FontPrimary);
+    canvas_draw_str_aligned(canvas, 64, y + 3, AlignCenter, AlignTop, "Actions");
+    canvas_draw_line(canvas, x + 1, y + 14, x + w - 2, y + 14);
+
+    int first = 0;
+    if(m->actions_index >= ACTIONS_VISIBLE) first = m->actions_index - ACTIONS_VISIBLE + 1;
+
+    canvas_set_font(canvas, FontSecondary);
+    for(int i = 0; i < ACTIONS_VISIBLE && first + i < ActionCount; i++) {
+        int item = first + i;
+        int ry = y + 16 + i * row_h;
+        if(item == m->actions_index) {
+            canvas_draw_rbox(canvas, x + 2, ry, w - 8, row_h, 2);
+            canvas_set_color(canvas, ColorWhite);
+        }
+        canvas_draw_str(canvas, x + 5, ry + 8, action_label(m, (uint8_t)item));
+        canvas_set_color(canvas, ColorBlack);
+    }
+
+    /* Scroll position: a short bar on the right edge. */
+    int track_h = ACTIONS_VISIBLE * row_h;
+    int bar_h = track_h * ACTIONS_VISIBLE / ActionCount;
+    int bar_y = y + 16 + (track_h - bar_h) * first / (ActionCount - ACTIONS_VISIBLE);
+    canvas_draw_box(canvas, x + w - 4, bar_y, 2, bar_h);
+}
+
 static void status_draw(Canvas* canvas, void* model) {
     if(!canvas || !model) return;
     StatusModel* m = model;
@@ -570,15 +638,8 @@ static void status_draw(Canvas* canvas, void* model) {
             canvas_draw_str_aligned(canvas, 77, 37, AlignCenter, AlignCenter, m->subtext);
         } else if(show_hint) {
             canvas_set_font(canvas, FontSecondary);
-            // "Hold [►] for menu" with inline icon
-            int hw = (int)canvas_string_width(canvas, "Hold ");
-            int fw = (int)canvas_string_width(canvas, " for menu");
-            int sw = (int)canvas_string_width(canvas, " "); // space after icon
-            int total = hw + 5 + sw + fw; // 5px icon width + space
-            int hx = 77 - total / 2;
-            canvas_draw_str(canvas, hx, 39, "Hold ");
-            draw_help_icon(canvas, hx + hw, 39, HelpBtnRight);
-            canvas_draw_str(canvas, hx + hw + 6 + sw, 39, "for menu");
+            /* T-Embed: the action menu sits on a long wheel press. */
+            canvas_draw_str_aligned(canvas, 77, 39, AlignCenter, AlignBottom, "Hold wheel: actions");
         }
     }
 
@@ -593,6 +654,8 @@ static void status_draw(Canvas* canvas, void* model) {
         hint_ok(canvas, "Enter");
         hint_right(canvas, "Cmds");
     }
+
+    if(m->actions_open) actions_draw(canvas, m);
 }
 
 static bool status_input(InputEvent* event, void* context) {
@@ -603,12 +666,87 @@ static bool status_input(InputEvent* event, void* context) {
         event->type != InputTypeRelease)
         return false;
 
+    /* ── T-Embed action menu open: it owns every key ── */
+    {
+        StatusModel* m = view_get_model(ui->status_view);
+        if(m->actions_open) {
+            bool redraw = false;
+            int chosen = -1;
+            if(event->type == InputTypeShort) {
+                switch(event->key) {
+                case InputKeyUp:
+                    m->actions_index =
+                        (m->actions_index == 0) ? ActionCount - 1 : m->actions_index - 1;
+                    redraw = true;
+                    break;
+                case InputKeyDown:
+                    m->actions_index = (m->actions_index + 1) % ActionCount;
+                    redraw = true;
+                    break;
+                case InputKeyOk:
+                    chosen = m->actions_index;
+                    m->actions_open = false;
+                    redraw = true;
+                    break;
+                case InputKeyBack:
+                    m->actions_open = false;
+                    redraw = true;
+                    break;
+                default:
+                    break; /* hold + turn: ignore while the menu is up */
+                }
+            }
+            if(chosen == ActionDictate) {
+                ui->up_hold_active = true;
+                ui->dictate_latched = true;
+                m->space_hold_active = true;
+            }
+            /* Commit before calling back: handlers may switch views. */
+            view_commit_model(ui->status_view, redraw);
+
+            UiEventType evt;
+            bool send = true;
+            switch(chosen) {
+            case ActionCommands:  evt = UiEventOpenMenu; break;
+            case ActionYes:       evt = UiEventYes; break;
+            case ActionEsc:       evt = UiEventEsc; break;
+            case ActionInterrupt: evt = UiEventInterrupt; break;
+            case ActionMute:      evt = UiEventToggleMute; break;
+            case ActionDictate:   evt = UiEventSpaceHoldStart; break;
+            case ActionInfo:      evt = UiEventOpenInfo; break;
+            case ActionExit:      evt = UiEventExitApp; break;
+            default:              send = false; evt = UiEventEnter; break;
+            }
+            if(send && ui->event_callback) ui->event_callback(evt, NULL, ui->event_context);
+            return true;
+        }
+        view_commit_model(ui->status_view, false);
+    }
+
+    /* ── Dictation started from the menu: the next click/press stops it ── */
+    if(ui->dictate_latched) {
+        if(event->type != InputTypeShort) return true;
+        ui->dictate_latched = false;
+        ui->up_hold_active = false;
+        StatusModel* m = view_get_model(ui->status_view);
+        m->space_hold_active = false;
+        view_commit_model(ui->status_view, true);
+        if(ui->event_callback) {
+            ui->event_callback(UiEventSpaceHoldEnd, NULL, ui->event_context);
+        }
+        return true;
+    }
+
     if(event->key == InputKeyOk && event->type == InputTypeShort) {
         if(ui->event_callback) ui->event_callback(UiEventEnter, NULL, ui->event_context);
         return true;
     }
     if(event->key == InputKeyOk && event->type == InputTypeLong) {
-        if(ui->event_callback) ui->event_callback(UiEventYes, NULL, ui->event_context);
+        /* T-Embed: hold wheel opens the action menu (was: type "yes"). */
+        StatusModel* m = view_get_model(ui->status_view);
+        m->actions_open = true;
+        m->actions_index = 0;
+        view_commit_model(ui->status_view, true);
         return true;
     }
     if(event->key == InputKeyLeft && event->type == InputTypeShort) {
@@ -831,19 +969,18 @@ typedef struct {
  * Esc, etc.  HelpBtnText entries render as plain-text lines (no icon)
  * so we can mix a title and install instructions with the button rows. */
 static const HelpEntry help_entries_bridge[] = {
-    {HelpBtnText,  false, "Button actions:"},
-    {HelpBtnUp,    false, "Voice dictation"},
-    {HelpBtnUp,    true,  "Hold-to-talk"},
-    {HelpBtnLeft,  false, "Interrupt (Esc)"},
-    {HelpBtnLeft,  true,  "Ctrl+C"},
-    {HelpBtnRight, false, "Cmd menu"},
-    {HelpBtnRight, true,  "Menu"},
-    {HelpBtnOk,    false, "Enter"},
-    {HelpBtnOk,    true,  "Yes + Enter"},
-    {HelpBtnDown,  false, "Down arrow"},
-    {HelpBtnDown,  true,  "Mute"},
-    {HelpBtnBack,  false, "Backspace"},
-    {HelpBtnBack,  true,  "Exit app"},
+    /* T-Embed layout (rotary wheel + side key). */
+    {HelpBtnText,  false, "T-Embed controls:"},
+    {HelpBtnText,  false, "Turn right: Down arrow"},
+    {HelpBtnText,  false, "Turn left: Dictation"},
+    {HelpBtnText,  false, "Click wheel: Enter"},
+    {HelpBtnText,  false, "Hold wheel: Actions menu"},
+    {HelpBtnText,  false, " (yes, Esc, Ctrl+C, mute,"},
+    {HelpBtnText,  false, "  dictate, info, exit)"},
+    {HelpBtnText,  false, "Side key: Backspace"},
+    {HelpBtnText,  false, "Hold side key: Exit app"},
+    {HelpBtnText,  false, "Hold+turn (quick):"},
+    {HelpBtnText,  false, " right=Cmds, left=Esc"},
     {HelpBtnText,  false, ""},
     {HelpBtnText,  false, "Install plugin:"},
     {HelpBtnText,  false, "```"},

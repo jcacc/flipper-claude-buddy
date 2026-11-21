@@ -70,6 +70,10 @@ typedef struct {
     uint8_t anim_frame;     // animation counter (incremented by timer)
     uint8_t transport_mode; // 0 = USB, 1 = BT (shown in header)
     uint8_t rssi_bars;      // BLE signal bars 0–4 (only used when transport_mode == 1)
+    /* T-Embed layout: the rotary encoder produces no long presses except
+     * Ok Long and Back Long, so hold-wheel opens an action menu overlay. */
+    bool actions_open;
+    uint8_t actions_index;
 } StatusModel;
 
 #define MAX_MENU_ITEMS 256
@@ -118,6 +122,7 @@ typedef struct {
     void* event_context;
     ViewId current_view;
     bool up_hold_active;
+    bool dictate_latched; // T-Embed: dictation started from the action menu; next click stops it
 } UiState;
 
 UiState* ui_alloc(Gui* gui);

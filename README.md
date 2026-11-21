@@ -4,6 +4,29 @@ Turn your Flipper Zero into a physical companion for Claude Code. Get tactile fe
 
 > Supports macOS and Linux. Windows is not tested.
 
+## LilyGo T-Embed CC1101 (ESP32 port) build
+
+This fork runs Claude Buddy on the
+[Flipper Zero ESP32 port](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port)
+(firmware 2.0.0) on a LilyGo T-Embed CC1101. It is not a build for a stock Flipper Zero.
+
+- **Bluetooth bridge mode only.** Port 2.0.0 gives apps no USB serial, so the USB transport
+  is stubbed. Desktop (Hardware Buddy) mode needs the STM32 Bluetooth stack, so choosing it
+  falls back to the Bluetooth bridge. Set `FLIPPER_TRANSPORT=ble` for the host bridge
+  (e.g. `"env": {"FLIPPER_TRANSPORT": "ble"}` in `~/.claude/settings.json`): with the cable
+  in, `auto` picks the T-Embed's log-only USB port.
+- **Rotary controls.** The wheel has no long presses on the arrows, so a long wheel press
+  opens an **Actions** menu: Commands, Approve (yes), Esc, Interrupt (Ctrl+C), Mute,
+  Dictate (click stops), Info, Exit. Turn = Down / dictation, click = Enter, side key =
+  Backspace, hold side key = exit.
+- **Bluetooth once per boot.** Port 2.0.0 only survives one app-started Bluetooth profile
+  per boot. Boot with Bluetooth **off** in settings, then open Claude Buddy first.
+- Firmware symbols that port 2.0.0 does not export (power, RTC set, notification
+  sequences, `strtol`, …) are defined in `flipper-app/esp32_compat.c`. Battery voltage and
+  current read 0, and host time sync is ignored.
+
+Install: copy `claude_buddy.fap` to `apps/Bluetooth/` on the SD card.
+
 ## What it does
 
 **You feel what Claude is doing.**
